@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     opa_binary: str = "opa"
     opa_policy_dir: str = "./terraform/sample/policies"
 
-    aws_region: str = "us-east-1"
-    aws_access_key_id: str = ""
-    aws_secret_access_key: str = ""
+    gcp_project_id: str = ""
+    gcp_region: str = "us-central1"
+    gcp_credentials_json: str = ""
 
     log_level: str = "INFO"
     log_format: str = "json"

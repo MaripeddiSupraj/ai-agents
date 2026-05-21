@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 
 
 RESOURCE_PATTERN = re.compile(
-    r"(aws_\w+)\.\w+"
+    r"((?:google|aws)_\w+)\.\w+"
 )
 
 

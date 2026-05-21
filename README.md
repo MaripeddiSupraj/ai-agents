@@ -64,7 +64,7 @@ AI-powered infrastructure governance platform that automatically reviews Terrafo
 - **Automated Terraform Plan Review** — Runs `terraform init` and `terraform plan` on every PR
 - **Security Risk Detection** — Identifies public S3 buckets, wildcard IAM policies, missing encryption, exposed secrets
 - **OPA Policy Validation** — Evaluates custom Rego policies for compliance (tagging, cost control, security baselines)
-- **AWS Cost Estimation** — Estimates monthly cost impact using AWS Pricing API and known rate cards
+- **GCP Cost Estimation** — Estimates monthly cost impact using GCP Cloud Billing API and known rate cards
 - **AI-Powered Review Summaries** — GPT-4o generates concise, actionable review comments with a risk score
 - **GitHub PR Integration** — Automatically posts review comments on PRs with markdown-formatted reports
 - **Destructive Change Detection** — Flags resources being replaced or destroyed
@@ -123,7 +123,8 @@ All configuration is via environment variables (see `.env.example`):
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection string |
 | `TERRAFORM_DIR` | No | `./terraform/sample` | Terraform root module |
 | `OPA_POLICY_DIR` | No | `./terraform/sample/policies` | Rego policy directory |
-| `AWS_REGION` | No | `us-east-1` | AWS region for pricing |
+| `GCP_PROJECT_ID` | For costs | - | GCP project for billing API |
+| `GCP_REGION` | No | `us-central1` | GCP region for pricing |
 | `LOG_LEVEL` | No | `INFO` | Logging level |
 | `LOG_FORMAT` | No | `json` | `json` or `console` |
 
@@ -301,7 +302,7 @@ Production infrastructure review needs **observability, reliability, and extensi
 - [ ] **Drift detection** — Compare planned state against live AWS resources
 - [ ] **Slack/Teams notifications** — Alert teams when high-risk changes are proposed
 - [ ] **Custom policy-as-code UI** — Web UI for managing Rego policies
-- [ ] **Multi-cloud support** — Azure and GCP pricing estimation
+- [ ] **Multi-cloud support** — AWS and Azure pricing estimation
 - [ ] **Terratest integration** — Automated infrastructure testing in review pipeline
 - [ ] **Cost history dashboard** — Track cost impact across PRs over time
 - [ ] **Auto-remediation** — Post suggested `terraform plan` changes as PR fix suggestions

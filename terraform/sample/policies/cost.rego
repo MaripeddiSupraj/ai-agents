@@ -3,32 +3,33 @@ package terraform
 import future.keywords.if
 import future.keywords.in
 
-# Flag large EC2 instance types (cost control)
+# Flag large Compute Engine machine types (cost control)
 deny[msg] {
     resource := input.resources[_]
-    resource.type == "aws_instance"
-    instance_type := resource.instance_type
-    startswith(instance_type, "m5.") or
-    startswith(instance_type, "c5.") or
-    startswith(instance_type, "r5.") or
-    startswith(instance_type, "t3.large")
+    resource.type == "google_compute_instance"
+    machine_type := resource.machine_type
+    startswith(machine_type, "n2-") or
+    startswith(machine_type, "c2-") or
+    startswith(machine_type, "m1-") or
+    startswith(machine_type, "e2-standard-")
     msg := {
-        "policy": "cost_control_ec2_instance_type",
+        "policy": "cost_control_machine_type",
         "resource": resource.address,
-        "message": sprintf("EC2 instance type '%s' may be oversized. Consider right-sizing or using Graviton (t4g/m7g).", [instance_type]),
+        "message": sprintf("Instance uses '%s' which may be oversized. Consider e2-small or e2-micro for non-production.", [machine_type]),
         "severity": "LOW",
     }
 }
 
-# Flag RDS instances not using Aurora serverless
+# Flag non-serverless Cloud SQL
 deny[msg] {
     resource := input.resources[_]
-    resource.type == "aws_db_instance"
-    not resource.engine == "aurora"
+    resource.type == "google_sql_database_instance"
+    resource.database_version != "SQLSERVER_2019_STANDARD"
+    resource.database_version != "POSTGRES_15"
     msg := {
-        "policy": "cost_control_rds_aurora",
+        "policy": "cost_control_sql_edition",
         "resource": resource.address,
-        "message": "RDS instance not using Aurora. Consider Aurora Serverless v2 for cost efficiency.",
+        "message": "Cloud SQL not using latest edition. Consider using Cloud SQL Enterprise Plus for better price/performance.",
         "severity": "LOW",
     }
 }

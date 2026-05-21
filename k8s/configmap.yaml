@@ -19,4 +19,5 @@ data:
   TERRAFORM_BINARY: "terraform"
   OPA_BINARY: "opa"
   OPA_POLICY_DIR: "/app/terraform/sample/policies"
-  AWS_REGION: "us-east-1"
+  GCP_PROJECT_ID: "your-gcp-project-id"
+  GCP_REGION: "us-central1"

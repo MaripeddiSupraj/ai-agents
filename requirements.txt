@@ -16,8 +16,9 @@ openai>=1.0.0
 # Redis
 redis>=5.0.0
 
-# AWS
-boto3>=1.28.0
+# GCP
+google-cloud-billing>=1.9.0
+google-cloud-storage>=2.0.0
 
 # HTTP
 httpx>=0.25.0

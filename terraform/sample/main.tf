@@ -1,124 +1,123 @@
 terraform {
   required_version = ">= 1.0"
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
+    google = {
+      source  = "hashicorp/google"
       version = "~> 5.0"
     }
   }
 }
 
-provider "aws" {
-  region = "us-east-1"
+provider "google" {
+  project = "your-gcp-project-id"
+  region  = "us-central1"
 }
 
-resource "aws_s3_bucket" "public_data" {
-  bucket = "my-org-public-data-1234"
-  acl    = "public-read"
+resource "google_storage_bucket" "public_data" {
+  name          = "my-org-public-data-1234"
+  location      = "US"
+  storage_class = "STANDARD"
 
-  tags = {
+  labels = {
     Name = "Public data bucket"
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "public_data_block" {
-  bucket = aws_s3_bucket.public_data.id
-
-  block_public_acls       = false
-  block_public_policy     = false
-  ignore_public_acls      = false
-  restrict_public_buckets = false
+resource "google_storage_bucket_iam_member" "public_data_all_users" {
+  bucket = google_storage_bucket.public_data.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
 }
 
-resource "aws_iam_role" "lambda_role" {
-  name = "lambda-execution-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-      }
-    ]
-  })
+resource "google_service_account" "function_sa" {
+  account_id   = "function-execution-sa"
+  display_name = "Cloud Function Execution Service Account"
 }
 
-resource "aws_iam_role_policy" "lambda_admin_policy" {
-  name = "lambda-admin-policy"
-  role = aws_iam_role.lambda_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action   = "*"
-        Effect   = "Allow"
-        Resource = "*"
-      }
-    ]
-  })
+resource "google_project_iam_member" "function_admin" {
+  project = "your-gcp-project-id"
+  role    = "roles/owner"
+  member  = "serviceAccount:${google_service_account.function_sa.email}"
 }
 
-resource "aws_s3_bucket" "app_logs" {
-  bucket = "my-org-app-logs"
-  acl    = "private"
+resource "google_storage_bucket" "app_logs" {
+  name          = "my-org-app-logs-${formatdate("YYYYMMDDhhmmss", timestamp())}"
+  location      = "US"
+  storage_class = "STANDARD"
 
-  tags = {
+  labels = {
     Name        = "Application logs"
     Environment = "production"
     Owner       = "platform-team"
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "app_logs_block" {
-  bucket = aws_s3_bucket.app_logs.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+resource "google_firestore_database" "users_db" {
+  project     = "your-gcp-project-id"
+  name        = "users-database"
+  location_id = "nam5"
+  type        = "FIRESTORE_NATIVE"
 }
 
-resource "aws_dynamodb_table" "users_table" {
-  name         = "users-table"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "user_id"
+resource "google_cloudfunctions_function" "data_processor" {
+  name        = "data-processor"
+  runtime     = "python311"
+  region      = "us-central1"
+  entry_point = "process_event"
 
-  attribute {
-    name = "user_id"
-    type = "S"
+  source_archive_bucket = google_storage_bucket.app_logs.name
+  source_archive_object = "function-source.zip"
+
+  event_trigger {
+    event_type = "google.storage.object.finalize"
+    resource   = google_storage_bucket.app_logs.name
+  }
+
+  environment_variables = {
+    LOG_LEVEL = "INFO"
   }
 }
 
-resource "aws_lambda_function" "data_processor" {
-  function_name = "data-processor"
-  role          = aws_iam_role.lambda_role.arn
-  handler       = "handler.lambda_handler"
-  runtime       = "python3.11"
-  filename      = "function.zip"
-  timeout       = 30
+resource "google_compute_router_nat" "main" {
+  name   = "main-nat"
+  router = google_compute_router.main.name
+  region = "us-central1"
 
-  environment {
-    variables = {
-      LOG_LEVEL = "INFO"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+
+  nat_ip_allocate_option = "AUTO_ONLY"
+}
+
+resource "google_compute_router" "main" {
+  name    = "main-router"
+  region  = "us-central1"
+  network = google_compute_network.default.id
+}
+
+resource "google_compute_network" "default" {
+  name                    = "default-network"
+  auto_create_subnetworks = true
+}
+
+resource "google_compute_instance" "bastion" {
+  name         = "bastion-host"
+  machine_type = "e2-medium"
+  zone         = "us-central1-a"
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-11"
+    }
+  }
+
+  network_interface {
+    network = google_compute_network.default.name
+    access_config {
+      nat_ip = google_compute_address.bastion_ip.address
     }
   }
 }
 
-resource "aws_nat_gateway" "main" {
-  allocation_id = "eipalloc-12345678"
-  subnet_id     = "subnet-12345678"
-}
-
-resource "aws_instance" "bastion" {
-  ami           = "ami-0c55b159cbfafe1f0"
-  instance_type = "t3.medium"
-
-  tags = {
-    Name = "bastion-host"
-  }
+resource "google_compute_address" "bastion_ip" {
+  name = "bastion-public-ip"
 }

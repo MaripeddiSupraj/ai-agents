@@ -18,7 +18,7 @@ class TestSecurityScanAgent:
     @pytest.mark.asyncio
     async def test_parse_response_valid_json(self):
         agent = SecurityScanAgent()
-        response = '[{"severity":"HIGH","category":"public_s3","resource":"aws_s3_bucket.x","message":"test","recommendation":"fix"}]'
+        response = '[{"severity":"HIGH","category":"public_s3","resource":"google_storage_bucket.x","message":"test","recommendation":"fix"}]'
         issues = agent._parse_response(response)
         assert len(issues) == 1
         assert issues[0].severity == "HIGH"
@@ -56,13 +56,13 @@ class TestCostAnalysisAgent:
     def test_extract_resource_types(self):
         agent = CostAnalysisAgent()
         plan = (
-            '  # aws_s3_bucket.x will be created\n'
-            '  + resource "aws_s3_bucket" "x" {\n'
-            '  # aws_dynamodb_table.y will be created\n'
+            '  # google_storage_bucket.x will be created\n'
+            '  + resource "google_storage_bucket" "x" {\n'
+            '  # google_firestore_database.y will be created\n'
         )
         types = agent._extract_resource_types(plan)
         assert len(types) >= 2
-        assert ("aws_s3_bucket", "aws_s3_bucket.x") in types
+        assert ("google_storage_bucket", "google_storage_bucket.x") in types
 
 
 class TestAIReviewAgent:

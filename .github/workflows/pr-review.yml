@@ -72,7 +72,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
           REDIS_URL: redis://localhost:6379/0
-          AWS_REGION: us-east-1
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: us-central1
         run: |
           python -c "
 import asyncio

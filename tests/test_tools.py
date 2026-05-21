@@ -18,15 +18,15 @@ class TestTerraformTool:
     async def test_parse_plan_resources_with_creation(self):
         tool = TerraformTool()
         plan = (
-            '  # aws_s3_bucket.example will be created\n'
-            '  + resource "aws_s3_bucket" "example" {\n'
-            '  # aws_s3_bucket.other will be destroyed\n'
-            '  - resource "aws_s3_bucket" "other" {\n'
+            '  # google_storage_bucket.example will be created\n'
+            '  + resource "google_storage_bucket" "example" {\n'
+            '  # google_storage_bucket.other will be destroyed\n'
+            '  - resource "google_storage_bucket" "other" {\n'
         )
         result = tool.parse_plan_resources(plan)
         assert len(result) == 4
         assert result[0]["action"] == "create"
-        assert result[1]["address"] == "aws_s3_bucket.example"
+        assert result[1]["address"] == "google_storage_bucket.example"
         assert result[3]["action"] == "destroy"
 
     def test_classify_action(self):
@@ -61,7 +61,7 @@ class TestOpaTool:
 
     def test_parse_result_with_violations(self):
         tool = OpaTool()
-        raw = '{"result":[{"expressions":[{"value":[{"policy":"test","resource":"aws_s3_bucket.x","message":"test violation","severity":"HIGH"}]}]}]}'
+        raw = '{"result":[{"expressions":[{"value":[{"policy":"test","resource":"google_storage_bucket.x","message":"test violation","severity":"HIGH"}]}]}]}'
         result = tool._parse_result(raw)
         assert len(result) == 1
         assert result[0].policy == "test"
@@ -79,14 +79,14 @@ class TestCostTool:
     def test_estimate_known_resource(self):
         tool = CostTool()
         import asyncio
-        result = asyncio.run(tool.estimate_resource("aws_s3_bucket", "aws_s3_bucket.data"))
-        assert result.resource_type == "aws_s3_bucket"
+        result = asyncio.run(tool.estimate_resource("google_storage_bucket", "google_storage_bucket.data"))
+        assert result.resource_type == "google_storage_bucket"
         assert result.estimated_monthly_cost >= 0
 
     def test_estimate_unknown_resource(self):
         tool = CostTool()
         import asyncio
-        result = asyncio.run(tool.estimate_resource("aws_undefined_resource", "aws_undefined_resource.x"))
+        result = asyncio.run(tool.estimate_resource("google_undefined_resource", "google_undefined_resource.x"))
         assert result.estimated_monthly_cost >= 0
 
     def test_cost_map_values(self):
@@ -132,7 +132,7 @@ class TestGitHubTool:
                 SecurityIssue(
                     severity="HIGH",
                     category="public_s3",
-                    resource="aws_s3_bucket.data",
+                    resource="google_storage_bucket.data",
                     message="Bucket is public",
                     recommendation="Block public access",
                 )
@@ -140,7 +140,7 @@ class TestGitHubTool:
         )
         comment = tool._format_review_comment(review)
         assert "Security Issues" in comment
-        assert "aws_s3_bucket.data" in comment
+        assert "google_storage_bucket.data" in comment
         assert "🔒" in comment
 
     def test_format_review_comment_with_cost(self):
@@ -151,7 +151,7 @@ class TestGitHubTool:
             repository="test/repo",
             ai_review=AiReview(summary="OK", risks=[], recommendations=[], score=80, approved=True),
             cost_estimates=[
-                CostEstimate(resource="aws_nat_gateway.main", resource_type="aws_nat_gateway", estimated_monthly_cost=32.40)
+                CostEstimate(resource="google_compute_router_nat.main", resource_type="google_compute_router_nat", estimated_monthly_cost=32.40)
             ],
         )
         comment = tool._format_review_comment(review)
