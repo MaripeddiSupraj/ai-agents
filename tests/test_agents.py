@@ -55,7 +55,11 @@ class TestCostAnalysisAgent:
 
     def test_extract_resource_types(self):
         agent = CostAnalysisAgent()
-        plan = 'resource "aws_s3_bucket" "x" {} resource "aws_dynamodb_table" "y" {}'
+        plan = (
+            '  # aws_s3_bucket.x will be created\n'
+            '  + resource "aws_s3_bucket" "x" {\n'
+            '  # aws_dynamodb_table.y will be created\n'
+        )
         types = agent._extract_resource_types(plan)
         assert len(types) >= 2
         assert ("aws_s3_bucket", "aws_s3_bucket.x") in types

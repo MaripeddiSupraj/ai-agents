@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class TerraformPlanRequest(BaseModel):
@@ -50,7 +50,7 @@ class AiReview(BaseModel):
 class ReviewOutput(BaseModel):
     pr_number: int = 0
     repository: str = ""
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
+    processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str = "completed"
     terraform_plan: Optional[TerraformPlanResponse] = None
     security_issues: list[SecurityIssue] = Field(default_factory=list)

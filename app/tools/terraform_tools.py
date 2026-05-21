@@ -98,15 +98,40 @@ class TerraformTool:
         resources: list[dict] = []
         for line in plan_stdout.splitlines():
             line = line.strip()
-            if line.startswith("#") or not line:
+            if not line:
                 continue
-            if "will be" in line and ("created" in line or "destroyed" in line or "replaced" in line):
-                resources.append({
-                    "raw": line,
-                    "action": self._classify_action(line),
-                    "address": self._extract_address(line),
-                })
+
+            resource = None
+
+            if line.startswith("#") and "will be" in line:
+                action = self._classify_action(line)
+                address = self._extract_address(line)
+                if action != "unknown":
+                    resource = {
+                        "raw": line,
+                        "action": action,
+                        "address": address,
+                    }
+
+            elif line.startswith(("+", "-", "~")) and "resource" in line:
+                parts = line.split('"')
+                if len(parts) >= 3:
+                    resource_type = parts[1]
+                    resource_name = parts[3] if len(parts) >= 5 else "unknown"
+                    resource = {
+                        "raw": line,
+                        "action": self._classify_operator(line[0]),
+                        "address": f"{resource_type}.{resource_name}",
+                    }
+
+            if resource:
+                resources.append(resource)
+
         return resources
+
+    def _classify_operator(self, operator: str) -> str:
+        mapping = {"+": "create", "-": "destroy", "~": "update"}
+        return mapping.get(operator, "unknown")
 
     def _classify_action(self, line: str) -> str:
         if "created" in line:
@@ -123,7 +148,14 @@ class TerraformTool:
 
     def _extract_address(self, line: str) -> str:
         parts = line.split()
-        if parts:
-            addr = parts[0]
-            return addr.strip('"')
+        if not parts:
+            return "unknown"
+        for part in parts:
+            if "." in part and part.startswith(("aws_", "module.")):
+                return part.strip('"')
+            if part.startswith("resource"):
+                continue
+        addr = parts[0].lstrip("#").strip()
+        if addr:
+            return addr
         return "unknown"

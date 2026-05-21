@@ -208,7 +208,9 @@ async def should_run_plan(state: ReviewState) -> Literal["continue", "skip_plan"
 async def check_plan_result(state: ReviewState) -> Literal["continue", "failed"]:
     exit_code = state.get("terraform_plan_exit_code", -1)
     errors = state.get("errors", [])
-    if exit_code == -1 and errors:
+    if exit_code == -1:
+        return "failed"
+    if exit_code not in (0, 2):
         return "failed"
     return "continue"
 

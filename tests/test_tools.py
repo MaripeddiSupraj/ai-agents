@@ -17,9 +17,17 @@ class TestTerraformTool:
     @pytest.mark.asyncio
     async def test_parse_plan_resources_with_creation(self):
         tool = TerraformTool()
-        plan = '# aws_s3_bucket.example will be created\n+ resource "aws_s3_bucket" "example" {'
+        plan = (
+            '  # aws_s3_bucket.example will be created\n'
+            '  + resource "aws_s3_bucket" "example" {\n'
+            '  # aws_s3_bucket.other will be destroyed\n'
+            '  - resource "aws_s3_bucket" "other" {\n'
+        )
         result = tool.parse_plan_resources(plan)
-        assert len(result) >= 1
+        assert len(result) == 4
+        assert result[0]["action"] == "create"
+        assert result[1]["address"] == "aws_s3_bucket.example"
+        assert result[3]["action"] == "destroy"
 
     def test_classify_action(self):
         tool = TerraformTool()
