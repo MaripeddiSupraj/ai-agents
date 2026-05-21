@@ -55,6 +55,8 @@ class OpaTool:
         return all_violations
 
     async def _run_eval(self, policy_file: str, input_data: dict) -> str:
+        import tempfile
+
         policy_dir = Path(self._policy_dir).resolve()
         policy_path = policy_dir / policy_file
 
@@ -62,23 +64,29 @@ class OpaTool:
             logger.warning("opa_policy_not_found", path=str(policy_path))
             return "{}"
 
+        input_path: str | None = None
         try:
             input_json = json.dumps(input_data)
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as tmp:
+                tmp.write(input_json)
+                input_path = tmp.name
+
             proc = await asyncio.create_subprocess_exec(
                 self._binary,
                 "eval",
                 "--data", policy_file,
-                "--input", "/dev/stdin",
+                "--input", input_path,
                 "--format", "json",
                 "data.terraform.deny",
                 cwd=str(policy_dir),
-                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
 
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(input=input_json.encode("utf-8")), timeout=30.0
+                proc.communicate(), timeout=30.0
             )
 
             stderr = stderr_bytes.decode("utf-8", errors="replace")
@@ -90,7 +98,6 @@ class OpaTool:
                 )
 
             return stdout_bytes.decode("utf-8", errors="replace")
-
         except FileNotFoundError:
             logger.error("opa_binary_not_found", binary=self._binary)
             return "{}"
@@ -100,6 +107,12 @@ class OpaTool:
         except Exception as e:
             logger.error("opa_eval_failed", policy=policy_file, error=str(e))
             return "{}"
+        finally:
+            if input_path is not None:
+                try:
+                    os.unlink(input_path)
+                except OSError:
+                    pass
 
     def _parse_result(self, raw_output: str) -> list[OpaViolation]:
         violations: list[OpaViolation] = []

@@ -23,13 +23,13 @@ RUN curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/te
     && rm /tmp/terraform.zip \
     && terraform --version
 
-ARG OPA_VERSION=0.68.0
+ARG OPA_VERSION=1.0.0
 RUN curl -fsSL "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static" \
     -o /usr/local/bin/opa \
     && chmod +x /usr/local/bin/opa \
     && opa version
 
-RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+RUN groupadd -r appuser --gid 999 && useradd -r -g appuser --uid 999 -d /app -s /sbin/nologin appuser
 
 WORKDIR /app
 COPY --from=builder /root/.local /usr/local

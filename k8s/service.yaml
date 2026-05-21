@@ -1,7 +1,13 @@
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: terraform-review
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: terraform-review-agent
+  namespace: terraform-review
   labels:
     app: terraform-review-agent
 spec:
@@ -18,6 +24,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis-service
+  namespace: terraform-review
   labels:
     app: redis
 spec:
@@ -27,3 +34,38 @@ spec:
       name: redis
   selector:
     app: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: terraform-review
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      tolerations:
+        - key: role
+          operator: Equal
+          value: api
+          effect: NoSchedule
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
