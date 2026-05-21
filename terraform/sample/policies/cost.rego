@@ -1,17 +1,13 @@
 package terraform
 
-import future.keywords.if
-import future.keywords.in
+large_types := {"n2-standard-", "n2-highmem-", "n2-highcpu-", "c2-standard-", "c2d-standard-", "m1-megamem-", "m1-ultramem-", "e2-standard-2", "e2-standard-4", "e2-standard-8", "e2-standard-16"}
 
-# Flag large Compute Engine machine types (cost control)
-deny[msg] {
+deny contains msg if {
     resource := input.resources[_]
     resource.type == "google_compute_instance"
     machine_type := resource.machine_type
-    startswith(machine_type, "n2-") or
-    startswith(machine_type, "c2-") or
-    startswith(machine_type, "m1-") or
-    startswith(machine_type, "e2-standard-")
+    some prefix in large_types
+    startswith(machine_type, prefix)
     msg := {
         "policy": "cost_control_machine_type",
         "resource": resource.address,
@@ -20,12 +16,10 @@ deny[msg] {
     }
 }
 
-# Flag non-serverless Cloud SQL
-deny[msg] {
+deny contains msg if {
     resource := input.resources[_]
     resource.type == "google_sql_database_instance"
-    resource.database_version != "SQLSERVER_2019_STANDARD"
-    resource.database_version != "POSTGRES_15"
+    not startswith(resource.database_version, "POSTGRES_15")
     msg := {
         "policy": "cost_control_sql_edition",
         "resource": resource.address,

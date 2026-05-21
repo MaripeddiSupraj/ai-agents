@@ -55,7 +55,8 @@ class OpaTool:
         return all_violations
 
     async def _run_eval(self, policy_file: str, input_data: dict) -> str:
-        policy_path = Path(self._policy_dir) / policy_file
+        policy_dir = Path(self._policy_dir).resolve()
+        policy_path = policy_dir / policy_file
 
         if not policy_path.exists():
             logger.warning("opa_policy_not_found", path=str(policy_path))
@@ -66,11 +67,11 @@ class OpaTool:
             proc = await asyncio.create_subprocess_exec(
                 self._binary,
                 "eval",
-                "--data", str(policy_path),
+                "--data", policy_file,
                 "--input", "/dev/stdin",
                 "--format", "json",
                 "data.terraform.deny",
-                cwd=self._policy_dir,
+                cwd=str(policy_dir),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

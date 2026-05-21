@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional, Annotated
+from typing import TypedDict, Optional
 from app.models.schemas import (
     TerraformPlanResponse,
     SecurityIssue,
@@ -6,12 +6,6 @@ from app.models.schemas import (
     CostEstimate,
     AiReview,
 )
-
-
-def merge_dicts(a: dict, b: dict) -> dict:
-    merged = a.copy()
-    merged.update(b)
-    return merged
 
 
 class ReviewState(TypedDict):
@@ -28,16 +22,16 @@ class ReviewState(TypedDict):
     terraform_plan_exit_code: int
     terraform_plan_response: Optional[TerraformPlanResponse]
 
-    security_issues: Annotated[list[SecurityIssue], merge_dicts]
-    opa_violations: Annotated[list[OpaViolation], merge_dicts]
-    cost_estimates: Annotated[list[CostEstimate], merge_dicts]
+    security_issues: list[SecurityIssue]
+    opa_violations: list[OpaViolation]
+    cost_estimates: list[CostEstimate]
     ai_review: Optional[AiReview]
 
     opa_input: dict
 
     review_comment_id: Optional[int]
     status: str
-    errors: Annotated[list[str], merge_dicts]
+    errors: list[str]
 
 
 def make_initial_state() -> ReviewState:

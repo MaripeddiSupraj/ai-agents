@@ -1,10 +1,8 @@
 package terraform
 
-import future.keywords.if
-import future.keywords.in
+required_labels := {"environment", "owner", "name"}
 
-# Deny storage buckets that grant public access (allUsers / allAuthenticatedUsers)
-deny[msg] {
+deny contains msg if {
     resource := input.resources[_]
     resource.type == "google_storage_bucket_iam_member"
     resource.member == "allUsers"
@@ -16,7 +14,7 @@ deny[msg] {
     }
 }
 
-deny[msg] {
+deny contains msg if {
     resource := input.resources[_]
     resource.type == "google_storage_bucket_iam_member"
     resource.member == "allAuthenticatedUsers"
@@ -28,8 +26,7 @@ deny[msg] {
     }
 }
 
-# Deny IAM policies with overly broad roles (roles/owner, roles/*.admin)
-deny[msg] {
+deny contains msg if {
     resource := input.resources[_]
     resource.type == "google_project_iam_member"
     resource.role == "roles/owner"
@@ -41,7 +38,7 @@ deny[msg] {
     }
 }
 
-deny[msg] {
+deny contains msg if {
     resource := input.resources[_]
     resource.type == "google_project_iam_member"
     contains(resource.role, "admin")
@@ -53,10 +50,7 @@ deny[msg] {
     }
 }
 
-# Deny resources missing required labels
-required_labels := {"Environment", "Owner", "Name"}
-
-deny[msg] {
+deny contains msg if {
     resource := input.resources[_]
     resource.type != "google_service_account"
     resource.type != "google_project_iam_member"
@@ -70,13 +64,12 @@ deny[msg] {
     msg := {
         "policy": "required_labels_missing",
         "resource": resource.address,
-        "message": sprintf("Missing required label '%s'. All resources must have labels: Environment, Owner, Name.", [missing_label]),
+        "message": sprintf("Missing required label '%s'. All resources must have labels: environment, owner, name.", [missing_label]),
         "severity": "MEDIUM",
     }
 }
 
-# Deny Cloud NAT gateways (cost control)
-deny[msg] {
+deny contains msg if {
     resource := input.resources[_]
     resource.type == "google_compute_router_nat"
     msg := {

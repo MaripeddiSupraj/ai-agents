@@ -92,21 +92,8 @@ async def terraform_plan_node(state: ReviewState) -> dict[str, Any]:
 async def prepare_opa_input(state: ReviewState) -> dict[str, Any]:
     logger.info("workflow_node:prepare_opa_input")
     plan_stdout = state.get("terraform_plan_stdout", "") or ""
-    tool = _get_terraform_tool()
-    resources = tool.parse_plan_resources(plan_stdout)
 
-    opa_input_resources = []
-    for r in resources:
-        opa_input_resources.append({
-            "address": r["address"],
-            "type": r.get("address", "").split(".")[0] if "." in r.get("address", "") else "unknown",
-            "action": r["action"],
-            "tags": {},
-            "public_access_blocked": False,
-            "policy_json": "",
-            "instance_type": "",
-            "engine": "",
-        })
+    opa_input_resources = _extract_opa_resources(plan_stdout)
 
     return {
         "opa_input": {
@@ -114,6 +101,70 @@ async def prepare_opa_input(state: ReviewState) -> dict[str, Any]:
             "plan_exit_code": state.get("terraform_plan_exit_code", -1),
         }
     }
+
+
+def _extract_opa_resources(plan_stdout: str) -> list[dict]:
+    import re
+
+    resources: list[dict] = []
+    blocks = re.split(r"\n  # (google_\w+)\.(\w+) will be ", plan_stdout)
+
+    if len(blocks) < 3:
+        return resources
+
+    # blocks[0] is preamble, then alternating type/name/rest
+    i = 1
+    while i + 2 < len(blocks):
+        res_type = blocks[i].strip()
+        res_name = blocks[i + 1].strip()
+        body = blocks[i + 2]
+        i += 3
+
+        # Determine where this block ends (next resource or end)
+        end_idx = body.find("\n  # google_")
+        if end_idx != -1:
+            body = body[:end_idx]
+
+        address = f"{res_type}.{res_name}"
+        resource = {
+            "address": address,
+            "type": res_type,
+            "action": "create",
+            "labels": {},
+            "member": "",
+            "role": "",
+            "machine_type": "",
+            "database_version": "",
+            "policy_json": "",
+        }
+
+        if '"allUsers"' in body:
+            resource["member"] = "allUsers"
+        elif '"allAuthenticatedUsers"' in body:
+            resource["member"] = "allAuthenticatedUsers"
+
+        role_match = re.search(r'\+\s+role\s+=\s+"([^"]+)"', body)
+        if role_match:
+            resource["role"] = role_match.group(1)
+
+        machine_match = re.search(r'\+\s+machine_type\s+=\s+"([^"]+)"', body)
+        if machine_match:
+            resource["machine_type"] = machine_match.group(1)
+
+        db_match = re.search(r'\+\s+database_version\s+=\s+"([^"]+)"', body)
+        if db_match:
+            resource["database_version"] = db_match.group(1)
+
+        label_matches = re.findall(
+            r'\+\s+"([^"]+)"\s+=\s+"([^"]+)"',
+            body,
+        )
+        for k, v in label_matches:
+            resource["labels"][k] = v
+
+        resources.append(resource)
+
+    return resources
 
 
 async def security_scan_node(state: ReviewState) -> dict[str, Any]:
@@ -199,8 +250,9 @@ async def should_run_plan(state: ReviewState) -> Literal["continue", "skip_plan"
     changed_files = state.get("changed_files", [])
     has_tf_files = any(f.endswith(".tf") for f in changed_files)
     force_run = state.get("terraform_plan_exit_code", -1) != -1
+    direct_api_call = len(changed_files) == 0
 
-    if has_tf_files or force_run:
+    if direct_api_call or has_tf_files or force_run:
         return "continue"
     return "skip_plan"
 

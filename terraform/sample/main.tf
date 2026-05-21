@@ -19,7 +19,7 @@ resource "google_storage_bucket" "public_data" {
   storage_class = "STANDARD"
 
   labels = {
-    Name = "Public data bucket"
+    name = "Public data bucket"
   }
 }
 
@@ -41,14 +41,14 @@ resource "google_project_iam_member" "function_admin" {
 }
 
 resource "google_storage_bucket" "app_logs" {
-  name          = "my-org-app-logs-${formatdate("YYYYMMDDhhmmss", timestamp())}"
+  name          = "my-org-app-logs"
   location      = "US"
   storage_class = "STANDARD"
 
   labels = {
-    Name        = "Application logs"
-    Environment = "production"
-    Owner       = "platform-team"
+    name        = "Application logs"
+    environment = "production"
+    owner       = "platform-team"
   }
 }
 
@@ -59,33 +59,9 @@ resource "google_firestore_database" "users_db" {
   type        = "FIRESTORE_NATIVE"
 }
 
-resource "google_cloudfunctions_function" "data_processor" {
-  name        = "data-processor"
-  runtime     = "python311"
-  region      = "us-central1"
-  entry_point = "process_event"
-
-  source_archive_bucket = google_storage_bucket.app_logs.name
-  source_archive_object = "function-source.zip"
-
-  event_trigger {
-    event_type = "google.storage.object.finalize"
-    resource   = google_storage_bucket.app_logs.name
-  }
-
-  environment_variables = {
-    LOG_LEVEL = "INFO"
-  }
-}
-
-resource "google_compute_router_nat" "main" {
-  name   = "main-nat"
-  router = google_compute_router.main.name
-  region = "us-central1"
-
-  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
-
-  nat_ip_allocate_option = "AUTO_ONLY"
+resource "google_compute_network" "default" {
+  name                    = "default-network"
+  auto_create_subnetworks = true
 }
 
 resource "google_compute_router" "main" {
@@ -94,9 +70,13 @@ resource "google_compute_router" "main" {
   network = google_compute_network.default.id
 }
 
-resource "google_compute_network" "default" {
-  name                    = "default-network"
-  auto_create_subnetworks = true
+resource "google_compute_router_nat" "main" {
+  name   = "main-nat"
+  router = google_compute_router.main.name
+  region = "us-central1"
+
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+  nat_ip_allocate_option             = "AUTO_ONLY"
 }
 
 resource "google_compute_instance" "bastion" {
@@ -112,12 +92,5 @@ resource "google_compute_instance" "bastion" {
 
   network_interface {
     network = google_compute_network.default.name
-    access_config {
-      nat_ip = google_compute_address.bastion_ip.address
-    }
   }
-}
-
-resource "google_compute_address" "bastion_ip" {
-  name = "bastion-public-ip"
 }
