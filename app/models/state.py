@@ -33,6 +33,8 @@ class ReviewState(TypedDict):
     cost_estimates: Annotated[list[CostEstimate], merge_dicts]
     ai_review: Optional[AiReview]
 
+    opa_input: dict
+
     review_comment_id: Optional[int]
     status: str
     errors: Annotated[list[str], merge_dicts]
@@ -55,6 +57,7 @@ def make_initial_state() -> ReviewState:
         opa_violations=[],
         cost_estimates=[],
         ai_review=None,
+        opa_input={"resources": []},
         review_comment_id=None,
         status="pending",
         errors=[],
