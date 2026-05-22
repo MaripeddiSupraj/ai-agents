@@ -1,0 +1,79 @@
+name: "Terraform Review Agent"
+description: "Reviews Terraform PRs for security, policy, cost, and AI-approval"
+author: "MaripeddiSupraj"
+
+inputs:
+  openai_api_key:
+    description: "OpenAI API key"
+    required: true
+  github_token:
+    description: "GitHub token"
+    required: true
+    default: ${{ github.token }}
+  terraform_dir:
+    description: "Directory with terraform files"
+    required: false
+    default: ${{ github.workspace }}
+  redis_url:
+    description: "Redis connection string"
+    required: false
+    default: "redis://localhost:6379/0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Start Redis
+      shell: bash
+      run: |
+        docker run -d --rm --name redis-review \
+          -p 6379:6379 redis:7-alpine
+        for i in $(seq 1 10); do
+          docker exec redis-review redis-cli ping && break
+          sleep 1
+        done
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.9.0
+
+    - uses: open-policy-agent/setup-opa@v2
+      with:
+        version: 1.0.0
+
+    - name: Install agent
+      shell: bash
+      working-directory: ${{ github.action_path }}/..
+      run: pip install -r requirements.txt
+
+    - name: Run review
+      shell: bash
+      working-directory: ${{ github.action_path }}/..
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        REDIS_URL: ${{ inputs.redis_url }}
+        TERRAFORM_DIR: ${{ inputs.terraform_dir }}
+      run: |
+        python -c "
+        import asyncio, os, sys
+        sys.path.insert(0, os.getcwd())
+        from app.models.state import make_initial_state
+        from app.workflows.graph import create_review_graph
+        async def main():
+            initial = make_initial_state()
+            initial['pr_number'] = ${{ github.event.pull_request.number }}
+            initial['repository'] = '${{ github.repository }}'
+            result = await create_review_graph().ainvoke(dict(initial))
+            print('Status:', result.get('status'))
+        asyncio.run(main())
+        "
+
+    - name: Stop Redis
+      if: always()
+      shell: bash
+      run: docker stop redis-review 2>/dev/null || true
