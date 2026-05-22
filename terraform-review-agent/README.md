@@ -1,6 +1,65 @@
 # Terraform Review Agent
 
-AI-powered infrastructure governance platform that automatically reviews Terraform Pull Requests for security risks, policy compliance, cost impact, and code quality.
+AI-powered infrastructure governance platform that automatically reviews Terraform PRs for security risks, policy compliance, cost impact, and code quality.
+
+## Quick Start — Use in any repo
+
+Add this workflow to `.github/workflows/pr-review.yml` in any repo with Terraform code:
+
+```yaml
+name: Terraform Review Agent
+on: pull_request
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: MaripeddiSupraj/ai-agents
+          path: ai-agents
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: 1.0.0
+      - name: Install agent
+        working-directory: ai-agents/terraform-review-agent
+        run: pip install -r requirements.txt
+      - name: Run review
+        working-directory: ai-agents/terraform-review-agent
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TERRAFORM_DIR: ${{ github.workspace }}
+        run: |
+          python -c "
+          import asyncio, os, sys; sys.path.insert(0, os.getcwd())
+          from app.models.state import make_initial_state
+          from app.workflows.graph import create_review_graph
+          async def main():
+              initial = make_initial_state()
+              initial['pr_number'] = ${{ github.event.pull_request.number }}
+              initial['repository'] = '${{ github.repository }}'
+              result = await create_review_graph().ainvoke(dict(initial))
+              print('Status:', result.get('status'))
+          asyncio.run(main())
+          "
+```
+
+Then add `OPENAI_API_KEY` as a repo secret. Every PR with `.tf` changes gets reviewed automatically.
+
+For a complete working example, see [demo-tf-review](https://github.com/MaripeddiSupraj/demo-tf-review).
 
 ## Architecture
 
