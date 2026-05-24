@@ -45,6 +45,13 @@ class TestTerraformTool:
             assert result.exit_code == -1
             assert "not found" in (result.error or "")
 
+    @pytest.mark.asyncio
+    async def test_plan_json_returns_empty_on_binary_not_found(self):
+        tool = TerraformTool(work_dir="/tmp")
+        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
+            result = await tool.plan_json()
+            assert result == ""
+
 
 class TestOpaTool:
     @pytest.mark.asyncio
@@ -82,17 +89,63 @@ class TestCostTool:
         result = asyncio.run(tool.estimate_resource("google_storage_bucket", "google_storage_bucket.data"))
         assert result.resource_type == "google_storage_bucket"
         assert result.estimated_monthly_cost >= 0
+        assert result.is_estimate is True
 
     def test_estimate_unknown_resource(self):
         tool = CostTool()
         import asyncio
         result = asyncio.run(tool.estimate_resource("google_undefined_resource", "google_undefined_resource.x"))
         assert result.estimated_monthly_cost >= 0
+        assert result.is_estimate is True
 
     def test_cost_map_values(self):
-        assert all(isinstance(v, (int, float)) for v in [
-            2.30, 25.00, 0.00, 3.50, 32.40, 3.60, 22.40, 100.00, 50.00, 30.00, 10.00
-        ])
+        from app.tools.cost_tools import _RESOURCE_COST_MAP
+        assert all(isinstance(v, (int, float)) for v in _RESOURCE_COST_MAP.values())
+
+    def test_cost_map_has_aws_resources(self):
+        from app.tools.cost_tools import _RESOURCE_COST_MAP
+        aws_keys = [k for k in _RESOURCE_COST_MAP if k.startswith("aws_")]
+        assert len(aws_keys) >= 5
+
+    def test_cost_details_honest_language(self):
+        tool = CostTool()
+        details = tool._build_details("google_compute_instance", 30.0)
+        assert "approximation" in details or "estimate" in details.lower() or "~$" in details
+
+    def test_cost_details_zero_cost(self):
+        tool = CostTool()
+        details = tool._build_details("google_pubsub_topic", 0.0)
+        assert "usage" in details.lower() or "no direct cost" in details.lower()
+
+    def test_cost_details_aws_mentions_aws_calculator(self):
+        tool = CostTool()
+        details = tool._build_details("aws_instance", 30.0)
+        assert "AWS" in details
+
+    @pytest.mark.asyncio
+    async def test_infracost_returns_empty_when_not_installed(self):
+        tool = CostTool()
+        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
+            result = await tool.run_infracost("/tmp")
+            assert result == []
+
+    def test_parse_infracost_output(self):
+        tool = CostTool()
+        data = {
+            "projects": [{
+                "breakdown": {
+                    "resources": [
+                        {"name": "aws_instance.web", "monthlyCost": "45.60"},
+                        {"name": "aws_db_instance.main", "monthlyCost": "120.00"},
+                    ]
+                }
+            }]
+        }
+        estimates = tool._parse_infracost_output(data)
+        assert len(estimates) == 2
+        assert estimates[0].resource == "aws_instance.web"
+        assert estimates[0].estimated_monthly_cost == 45.60
+        assert estimates[0].is_estimate is False
 
 
 class TestGitHubTool:
@@ -157,3 +210,17 @@ class TestGitHubTool:
         comment = tool._format_review_comment(review)
         assert "Cost Estimate" in comment
         assert "$32.40" in comment
+
+    @pytest.mark.asyncio
+    async def test_set_commit_status_skips_without_token(self):
+        tool = GitHubTool()
+        tool._token = ""
+        result = await tool.set_commit_status("abc123", approved=True, score=90)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_set_commit_status_skips_without_sha(self):
+        tool = GitHubTool()
+        tool._token = "fake-token"
+        result = await tool.set_commit_status("", approved=True, score=90)
+        assert result is False

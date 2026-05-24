@@ -1,10 +1,11 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Optional
 from datetime import datetime, timezone
 
 
 class TerraformPlanRequest(BaseModel):
     directory: str = Field(default="./terraform/sample", description="Terraform root module directory")
+    commit_sha: str = Field(default="", description="Git commit SHA to post commit status against (optional)")
 
 
 class TerraformPlanResponse(BaseModel):
@@ -33,10 +34,11 @@ class OpaViolation(BaseModel):
 
 class CostEstimate(BaseModel):
     resource: str = Field(description="Terraform resource address")
-    resource_type: str = Field(description="AWS resource type")
+    resource_type: str = Field(description="GCP resource type (e.g. google_compute_instance)")
     estimated_monthly_cost: float = 0.0
     currency: str = "USD"
     details: str = ""
+    is_estimate: bool = Field(default=True, description="Always True — figures are static approximations, not live pricing")
 
 
 class AiReview(BaseModel):

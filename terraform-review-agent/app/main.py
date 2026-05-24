@@ -1,5 +1,7 @@
+import hashlib
+import hmac
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.models.config import get_settings
@@ -51,12 +53,10 @@ async def health_check():
 
 @app.post("/review", response_model=ReviewOutput, tags=["review"])
 async def run_review(request: TerraformPlanRequest):
-    from app.tools.terraform_tools import TerraformTool
     from app.workflows.graph import create_review_graph
 
     try:
         logger.info("review_requested", directory=request.directory)
-        terraform_tool = TerraformTool(work_dir=request.directory)
 
         initial = make_initial_state()
         initial["pr_number"] = settings.github_pr_number or 0
@@ -64,6 +64,8 @@ async def run_review(request: TerraformPlanRequest):
         initial["changed_files"] = []
         initial["pr_title"] = ""
         initial["pr_body"] = ""
+        initial["terraform_dir"] = request.directory
+        initial["commit_sha"] = request.commit_sha
 
         graph = create_review_graph()
         result = await graph.ainvoke(dict(initial))
@@ -86,11 +88,25 @@ async def run_review(request: TerraformPlanRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/webhook/github", tags=["webhook"])
-async def github_webhook(payload: dict):
-    import json
+def _verify_github_signature(body: bytes, signature_header: str, secret: str) -> bool:
+    if not secret:
+        return True
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_header)
 
-    logger.info("github_webhook_received", event=payload.get("action"))
+
+@app.post("/webhook/github", tags=["webhook"])
+async def github_webhook(request: Request):
+    body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not _verify_github_signature(body, signature, settings.github_webhook_secret):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    import json
+    payload = json.loads(body)
+    logger.info("github_webhook_received", action=payload.get("action"))
 
     try:
         pr_number = (
@@ -111,8 +127,9 @@ async def github_webhook(payload: dict):
             logger.info("github_webhook_no_tf_files", pr=pr_number)
             return {"status": "skipped", "reason": "No Terraform files changed"}
 
-        from app.models.state import make_initial_state
         from app.workflows.graph import create_review_graph
+
+        commit_sha = payload.get("pull_request", {}).get("head", {}).get("sha", "")
 
         initial = make_initial_state()
         initial["pr_number"] = pr_number
@@ -120,6 +137,7 @@ async def github_webhook(payload: dict):
         initial["changed_files"] = changed_files
         initial["pr_title"] = payload.get("pull_request", {}).get("title", "")
         initial["pr_body"] = payload.get("pull_request", {}).get("body", "")
+        initial["commit_sha"] = commit_sha
 
         graph = create_review_graph()
         result = await graph.ainvoke(dict(initial))

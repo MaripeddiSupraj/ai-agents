@@ -1,5 +1,8 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+
+_BUNDLED_POLICY_DIR = str(Path(__file__).parent.parent / "policies")
 
 
 class Settings(BaseSettings):
@@ -22,6 +25,7 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_repository: str = ""
     github_pr_number: int = 0
+    github_webhook_secret: str = ""
 
     redis_url: str = "redis://localhost:6379/0"
     redis_ttl: int = 3600
@@ -30,7 +34,10 @@ class Settings(BaseSettings):
     terraform_binary: str = "terraform"
 
     opa_binary: str = "opa"
-    opa_policy_dir: str = "./terraform/sample/policies"
+    opa_policy_dir: str = _BUNDLED_POLICY_DIR
+
+    infracost_binary: str = "infracost"
+    infracost_api_key: str = ""
 
     gcp_project_id: str = ""
     gcp_region: str = "us-central1"

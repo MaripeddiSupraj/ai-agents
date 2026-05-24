@@ -52,6 +52,38 @@ class TerraformTool:
         plan_result = await self.plan()
         return plan_result
 
+    async def plan_json(self) -> str:
+        """Run terraform plan -json and return the structured JSON output.
+
+        Uses a temp file for the binary plan, then terraform show -json to get
+        the structured representation. Returns empty string if unavailable.
+        """
+        plan_file: Optional[str] = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".tfplan", delete=False) as f:
+                plan_file = f.name
+
+            plan_result = await self._run_command(
+                ["plan", "-no-color", "-input=false", "-detailed-exitcode", f"-out={plan_file}"]
+            )
+            if plan_result.exit_code not in (0, 2):
+                return ""
+
+            show_result = await self._run_command(["show", "-json", plan_file])
+            if show_result.exit_code != 0:
+                return ""
+            # show -json output goes to plan_stdout slot in our response
+            return show_result.plan_stdout
+        except Exception as e:
+            logger.warning("terraform_plan_json_failed", error=str(e))
+            return ""
+        finally:
+            if plan_file:
+                try:
+                    os.unlink(plan_file)
+                except OSError:
+                    pass
+
     async def _run_command(self, args: list[str]) -> TerraformPlanResponse:
         try:
             proc = await asyncio.create_subprocess_exec(

@@ -1,10 +1,9 @@
-import json
 from typing import Any, Literal
 
 from langgraph.graph import StateGraph, START, END
 
-from app.models.state import ReviewState, make_initial_state
-from app.models.schemas import SecurityIssue, OpaViolation, CostEstimate, AiReview
+from app.models.state import ReviewState
+from app.models.schemas import AiReview
 from app.tools.terraform_tools import TerraformTool
 from app.tools.opa_tools import OpaTool
 from app.tools.github_tools import GitHubTool
@@ -69,8 +68,16 @@ def _get_github_tool() -> GitHubTool:
 async def terraform_plan_node(state: ReviewState) -> dict[str, Any]:
     logger.info("workflow_node:terraform_plan")
     try:
-        tool = _get_terraform_tool()
+        work_dir = state.get("terraform_dir") or None
+        tool = TerraformTool(work_dir=work_dir) if work_dir else _get_terraform_tool()
         response = await tool.run_full_plan()
+
+        plan_json = ""
+        if response.exit_code in (0, 2):
+            plan_json = await tool.plan_json()
+            if plan_json:
+                logger.info("terraform_plan_json_captured", bytes=len(plan_json))
+
         return {
             "terraform_init_stdout": response.init_stdout,
             "terraform_init_stderr": response.init_stderr,
@@ -78,6 +85,7 @@ async def terraform_plan_node(state: ReviewState) -> dict[str, Any]:
             "terraform_plan_stderr": response.plan_stderr,
             "terraform_plan_exit_code": response.exit_code,
             "terraform_plan_response": response,
+            "terraform_plan_json": plan_json,
             "status": "planned" if response.exit_code in (0, 2) else "plan_failed",
             "errors": [f"Terraform plan failed: {response.error}"] if response.error else [],
         }
@@ -91,9 +99,15 @@ async def terraform_plan_node(state: ReviewState) -> dict[str, Any]:
 
 async def prepare_opa_input(state: ReviewState) -> dict[str, Any]:
     logger.info("workflow_node:prepare_opa_input")
+    plan_json = state.get("terraform_plan_json", "") or ""
     plan_stdout = state.get("terraform_plan_stdout", "") or ""
 
-    opa_input_resources = _extract_opa_resources(plan_stdout)
+    if plan_json:
+        opa_input_resources = _extract_opa_resources_from_json(plan_json)
+        logger.info("opa_input_from_json", resources=len(opa_input_resources))
+    else:
+        opa_input_resources = _extract_opa_resources(plan_stdout)
+        logger.info("opa_input_from_stdout", resources=len(opa_input_resources))
 
     return {
         "opa_input": {
@@ -103,27 +117,69 @@ async def prepare_opa_input(state: ReviewState) -> dict[str, Any]:
     }
 
 
+def _extract_opa_resources_from_json(plan_json: str) -> list[dict]:
+    """Parse terraform show -json output into OPA input resources."""
+    import json as _json
+
+    try:
+        data = _json.loads(plan_json)
+    except Exception:
+        return []
+
+    resources: list[dict] = []
+    for rc in data.get("resource_changes", []):
+        change = rc.get("change", {})
+        actions = change.get("actions", [])
+        if not actions or actions == ["no-op"]:
+            continue
+
+        action = actions[0] if len(actions) == 1 else "replace"
+        after = change.get("after") or {}
+        address = rc.get("address", "unknown")
+        res_type = rc.get("type", "unknown")
+
+        resource: dict = {
+            "address": address,
+            "type": res_type,
+            "action": action,
+            "labels": after.get("labels", after.get("tags", {})) or {},
+            "member": after.get("member", ""),
+            "role": after.get("role", ""),
+            "machine_type": after.get("machine_type", after.get("instance_type", "")),
+            "instance_type": after.get("instance_type", ""),
+            "database_version": after.get("database_version", ""),
+            "policy_json": after.get("policy", ""),
+            "acl": after.get("acl", ""),
+            "encrypted": str(after.get("encrypted", "")).lower(),
+        }
+        resources.append(resource)
+
+    return resources
+
+
 def _extract_opa_resources(plan_stdout: str) -> list[dict]:
     import re
 
     resources: list[dict] = []
-    blocks = re.split(r"\n  # (google_\w+)\.(\w+) will be ", plan_stdout)
+    # Match both google_ and aws_ resource types
+    blocks = re.split(r"\n  # ((google|aws)_\w+)\.(\w+) will be ", plan_stdout)
 
-    if len(blocks) < 3:
+    if len(blocks) < 4:
         return resources
 
-    # blocks[0] is preamble, then alternating type/name/rest
+    # blocks[0] is preamble; groups: full_type, provider, name, body repeat
     i = 1
-    while i + 2 < len(blocks):
+    while i + 3 < len(blocks):
         res_type = blocks[i].strip()
-        res_name = blocks[i + 1].strip()
-        body = blocks[i + 2]
-        i += 3
+        # blocks[i+1] = provider match group (google|aws) — skip
+        res_name = blocks[i + 2].strip()
+        body = blocks[i + 3]
+        i += 4
 
         # Determine where this block ends (next resource or end)
-        end_idx = body.find("\n  # google_")
-        if end_idx != -1:
-            body = body[:end_idx]
+        end_match = re.search(r"\n  # (?:google|aws)_", body)
+        if end_match:
+            body = body[: end_match.start()]
 
         address = f"{res_type}.{res_name}"
         resource = {
@@ -136,6 +192,10 @@ def _extract_opa_resources(plan_stdout: str) -> list[dict]:
             "machine_type": "",
             "database_version": "",
             "policy_json": "",
+            # AWS-specific fields
+            "instance_type": "",
+            "acl": "",
+            "encrypted": "",
         }
 
         if '"allUsers"' in body:
@@ -151,10 +211,29 @@ def _extract_opa_resources(plan_stdout: str) -> list[dict]:
         if machine_match:
             resource["machine_type"] = machine_match.group(1)
 
+        # AWS instance_type
+        instance_match = re.search(r'\+\s+instance_type\s+=\s+"([^"]+)"', body)
+        if instance_match:
+            resource["instance_type"] = instance_match.group(1)
+            resource["machine_type"] = instance_match.group(1)
+
         db_match = re.search(r'\+\s+database_version\s+=\s+"([^"]+)"', body)
         if db_match:
             resource["database_version"] = db_match.group(1)
 
+        # AWS ACL
+        acl_match = re.search(r'\+\s+acl\s+=\s+"([^"]+)"', body)
+        if acl_match:
+            resource["acl"] = acl_match.group(1)
+            resource["labels"]["acl"] = acl_match.group(1)
+
+        # AWS encrypted flag
+        encrypted_match = re.search(r'\+\s+encrypted\s+=\s+(true|false)', body)
+        if encrypted_match:
+            resource["encrypted"] = encrypted_match.group(1)
+            resource["labels"]["encrypted"] = encrypted_match.group(1)
+
+        # Tags/labels as key=value pairs inside the plan block
         label_matches = re.findall(
             r'\+\s+"([^"]+)"\s+=\s+"([^"]+)"',
             body,
@@ -246,6 +325,26 @@ async def github_comment_node(state: ReviewState) -> dict[str, Any]:
         return {"errors": [f"GitHub comment error: {str(e)}"]}
 
 
+async def github_status_node(state: ReviewState) -> dict[str, Any]:
+    logger.info("workflow_node:github_status")
+    try:
+        commit_sha = state.get("commit_sha", "")
+        if not commit_sha:
+            logger.info("github_status_skipped_no_sha")
+            return {}
+
+        ai_review = state.get("ai_review")
+        approved = ai_review.approved if ai_review else False
+        score = ai_review.score if ai_review else 0
+
+        tool = _get_github_tool()
+        await tool.set_commit_status(commit_sha, approved=approved, score=score)
+        return {}
+    except Exception as e:
+        logger.error("github_status_node_failed", error=str(e))
+        return {"errors": [f"GitHub status error: {str(e)}"]}
+
+
 async def should_run_plan(state: ReviewState) -> Literal["continue", "skip_plan"]:
     changed_files = state.get("changed_files", [])
     has_tf_files = any(f.endswith(".tf") for f in changed_files)
@@ -259,7 +358,6 @@ async def should_run_plan(state: ReviewState) -> Literal["continue", "skip_plan"
 
 async def check_plan_result(state: ReviewState) -> Literal["continue", "failed"]:
     exit_code = state.get("terraform_plan_exit_code", -1)
-    errors = state.get("errors", [])
     if exit_code == -1:
         return "failed"
     if exit_code not in (0, 2):
@@ -277,6 +375,7 @@ def create_review_graph() -> StateGraph:
     workflow.add_node("cost_analysis_node", cost_analysis_node)
     workflow.add_node("ai_review_node", ai_review_node)
     workflow.add_node("github_comment_node", github_comment_node)
+    workflow.add_node("github_status_node", github_status_node)
 
     workflow.add_conditional_edges(
         START,
@@ -304,8 +403,11 @@ def create_review_graph() -> StateGraph:
     workflow.add_edge("opa_validation_node", "ai_review_node")
     workflow.add_edge("cost_analysis_node", "ai_review_node")
 
+    # After ai_review: post PR comment and set commit status in parallel
     workflow.add_edge("ai_review_node", "github_comment_node")
+    workflow.add_edge("ai_review_node", "github_status_node")
     workflow.add_edge("github_comment_node", END)
+    workflow.add_edge("github_status_node", END)
 
     return workflow.compile()
 

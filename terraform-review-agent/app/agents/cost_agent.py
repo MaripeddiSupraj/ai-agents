@@ -1,15 +1,9 @@
-import json
 import re
 from typing import Any
 
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-
-from app.models.config import get_settings
 from app.models.state import ReviewState
 from app.models.schemas import CostEstimate
 from app.tools.cost_tools import CostTool
-from app.prompts.cost_prompts import COST_SYSTEM_PROMPT, COST_USER_PROMPT
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -22,18 +16,7 @@ RESOURCE_PATTERN = re.compile(
 
 class CostAnalysisAgent:
     def __init__(self) -> None:
-        settings = get_settings()
-        self._llm = ChatOpenAI(
-            model=settings.openai_model,
-            temperature=settings.openai_temperature,
-            max_tokens=settings.openai_max_tokens,
-            api_key=settings.openai_api_key,
-        )
         self._cost_tool = CostTool()
-        self._prompt = ChatPromptTemplate.from_messages([
-            ("system", COST_SYSTEM_PROMPT),
-            ("human", COST_USER_PROMPT),
-        ])
 
     async def __call__(self, state: ReviewState) -> dict[str, Any]:
         logger.info("cost_analysis_starting")
@@ -44,18 +27,24 @@ class CostAnalysisAgent:
             return {"cost_estimates": []}
 
         try:
+            # Try Infracost first for real pricing data
+            terraform_dir = state.get("terraform_dir", "") or ""
+            if terraform_dir:
+                infracost_estimates = await self._cost_tool.run_infracost(terraform_dir)
+                if infracost_estimates:
+                    logger.info(
+                        "cost_analysis_from_infracost",
+                        resources=len(infracost_estimates),
+                        total=sum(e.estimated_monthly_cost for e in infracost_estimates),
+                    )
+                    return {"cost_estimates": infracost_estimates}
+
+            # Fall back to static cost map
             resource_types = self._extract_resource_types(plan_output)
             if not resource_types:
                 return {"cost_estimates": []}
 
             estimates = await self._cost_tool.estimate_all(resource_types)
-            cost_summary = self._summarize_estimates(estimates)
-
-            messages = await self._prompt.ainvoke({
-                "plan_output": plan_output[:15000],
-                "cost_estimates": cost_summary,
-            })
-            response = await self._llm.ainvoke(messages)
             logger.info(
                 "cost_analysis_completed",
                 resources=len(resource_types),

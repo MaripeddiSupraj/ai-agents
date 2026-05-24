@@ -14,6 +14,10 @@ class ReviewState(TypedDict):
     pr_title: str
     pr_body: str
     changed_files: list[str]
+    terraform_dir: str
+    commit_sha: str
+
+    terraform_plan_json: str
 
     terraform_init_stdout: str
     terraform_init_stderr: str
@@ -41,6 +45,9 @@ def make_initial_state() -> ReviewState:
         pr_title="",
         pr_body="",
         changed_files=[],
+        terraform_dir="",
+        commit_sha="",
+        terraform_plan_json="",
         terraform_init_stdout="",
         terraform_init_stderr="",
         terraform_plan_stdout="",

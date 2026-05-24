@@ -1,15 +1,9 @@
 from typing import Optional
-from github import Github, GithubIntegration
+from github import Github
 from github.IssueComment import IssueComment
 
 from app.models.config import get_settings
-from app.models.schemas import (
-    ReviewOutput,
-    SecurityIssue,
-    OpaViolation,
-    CostEstimate,
-    AiReview,
-)
+from app.models.schemas import ReviewOutput
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -55,6 +49,41 @@ class GitHubTool:
                 error=str(e),
             )
             return None
+
+    async def set_commit_status(
+        self,
+        commit_sha: str,
+        approved: bool,
+        score: int,
+        description: str = "",
+    ) -> bool:
+        if not self._token or not commit_sha:
+            logger.info("commit_status_skipped", reason="no token or sha")
+            return False
+        try:
+            state = "success" if approved else "failure"
+            desc = description or (
+                f"Score: {score}/100 — {'Approved' if approved else 'Changes requested'}"
+            )
+            client = self._get_client()
+            repo = client.get_repo(self._repository)
+            commit = repo.get_commit(commit_sha)
+            commit.create_status(
+                state=state,
+                description=desc[:140],
+                context="terraform-review-agent",
+                target_url="",
+            )
+            logger.info(
+                "commit_status_set",
+                sha=commit_sha[:8],
+                state=state,
+                score=score,
+            )
+            return True
+        except Exception as e:
+            logger.error("commit_status_failed", error=str(e))
+            return False
 
     async def update_pr_comment(
         self, comment_id: int, review: ReviewOutput
