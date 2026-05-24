@@ -164,7 +164,7 @@ class TestGitHubTool:
             ),
         )
         comment = tool._format_review_comment(review)
-        assert "Terraform Review Agent Report" in comment
+        assert "Terraform Review" in comment
         assert "✅" in comment
         assert "90/100" in comment
 
@@ -192,7 +192,7 @@ class TestGitHubTool:
             ],
         )
         comment = tool._format_review_comment(review)
-        assert "Security Issues" in comment
+        assert "Security Findings" in comment
         assert "google_storage_bucket.data" in comment
         assert "🔒" in comment
 
@@ -208,7 +208,7 @@ class TestGitHubTool:
             ],
         )
         comment = tool._format_review_comment(review)
-        assert "Cost Estimate" in comment
+        assert "Cost Breakdown" in comment
         assert "$32.40" in comment
 
     @pytest.mark.asyncio
