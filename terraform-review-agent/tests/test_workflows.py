@@ -138,11 +138,11 @@ class TestReviewGraph:
 class TestPrompts:
     def test_security_prompt_has_required_sections(self):
         from app.prompts.security_prompts import SECURITY_SYSTEM_PROMPT, SECURITY_USER_PROMPT
-        assert "public" in SECURITY_SYSTEM_PROMPT.lower()
-        assert "iam" in SECURITY_SYSTEM_PROMPT.lower()
-        assert "tags" in SECURITY_SYSTEM_PROMPT.lower()
-        assert "destructive" in SECURITY_SYSTEM_PROMPT.lower()
+        assert "attack" in SECURITY_SYSTEM_PROMPT.lower()
+        assert "intent" in SECURITY_SYSTEM_PROMPT.lower()
+        assert "blast radius" in SECURITY_SYSTEM_PROMPT.lower()
         assert "{plan_output}" in SECURITY_USER_PROMPT
+        assert "{pr_title}" in SECURITY_USER_PROMPT
         assert "{changed_files}" in SECURITY_USER_PROMPT
 
     def test_review_prompt_has_required_sections(self):
@@ -151,6 +151,8 @@ class TestPrompts:
         assert "opa" in REVIEW_SYSTEM_PROMPT.lower()
         assert "cost" in REVIEW_SYSTEM_PROMPT.lower()
         assert "approved" in REVIEW_SYSTEM_PROMPT.lower()
+        assert "{pr_title}" in REVIEW_USER_PROMPT
+        assert "{pr_body}" in REVIEW_USER_PROMPT
 
     def test_cost_prompt_has_required_sections(self):
         from app.prompts.cost_prompts import COST_SYSTEM_PROMPT, COST_USER_PROMPT

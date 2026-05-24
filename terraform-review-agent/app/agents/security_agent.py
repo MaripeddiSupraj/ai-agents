@@ -30,11 +30,10 @@ class SecurityScanAgent:
     async def __call__(self, state: ReviewState) -> dict[str, Any]:
         logger.info("security_scan_starting")
 
-        plan_output = (
-            state.get("terraform_plan_stdout", "")
-            or ""
-        )
+        plan_output = state.get("terraform_plan_stdout", "") or ""
         changed_files = state.get("changed_files", [])
+        pr_title = state.get("pr_title", "") or "No title provided"
+        pr_body = state.get("pr_body", "") or "No description provided"
 
         if not plan_output.strip():
             logger.info("security_scan_skipped_no_plan")
@@ -44,6 +43,8 @@ class SecurityScanAgent:
             messages = await self._prompt.ainvoke({
                 "plan_output": plan_output[:15000],
                 "changed_files": "\n".join(changed_files) if changed_files else "N/A",
+                "pr_title": pr_title,
+                "pr_body": pr_body[:2000],
             })
             response = await self._llm.ainvoke(messages)
             issues = self._parse_response(response.content)

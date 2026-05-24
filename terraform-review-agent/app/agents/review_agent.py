@@ -34,6 +34,8 @@ class AIReviewAgent:
         security_issues = state.get("security_issues", [])
         opa_violations = state.get("opa_violations", [])
         cost_estimates = state.get("cost_estimates", [])
+        pr_title = state.get("pr_title", "") or "No title provided"
+        pr_body = state.get("pr_body", "") or "No description provided"
 
         if not plan_output.strip():
             logger.info("ai_review_skipped_no_plan")
@@ -50,6 +52,8 @@ class AIReviewAgent:
         try:
             messages = await self._prompt.ainvoke({
                 "plan_output": plan_output[:15000],
+                "pr_title": pr_title,
+                "pr_body": pr_body[:2000],
                 "security_results": self._format_security(security_issues),
                 "opa_results": self._format_opa(opa_violations),
                 "cost_results": self._format_cost(cost_estimates),
