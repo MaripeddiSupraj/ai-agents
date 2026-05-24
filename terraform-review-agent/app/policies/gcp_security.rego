@@ -122,6 +122,7 @@ deny contains msg if {
 
 deny contains msg if {
     resource := input.resources[_]
+    startswith(resource.type, "google_")
     not label_exempt[resource.type]
     missing_label := required_labels[_]
     not resource.labels[missing_label]
