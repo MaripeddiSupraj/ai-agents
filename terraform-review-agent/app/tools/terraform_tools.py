@@ -105,8 +105,8 @@ class TerraformTool:
             return TerraformPlanResponse(
                 init_stdout=stdout if "init" in args else "",
                 init_stderr=stderr if "init" in args else "",
-                plan_stdout=stdout if "plan" in args else "",
-                plan_stderr=stderr if "plan" in args else "",
+                plan_stdout=stdout if "plan" in args or "show" in args else "",
+                plan_stderr=stderr if "plan" in args or "show" in args else "",
                 exit_code=proc.returncode or 0,
             )
 

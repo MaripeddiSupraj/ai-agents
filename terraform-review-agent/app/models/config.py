@@ -3,11 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 _BUNDLED_POLICY_DIR = str(Path(__file__).parent.parent / "policies")
+_REPO_ROOT_ENV = str(Path(__file__).parent.parent.parent.parent / ".env")
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=[".env", _REPO_ROOT_ENV],
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

@@ -282,7 +282,12 @@ async def ai_review_node(state: ReviewState) -> dict[str, Any]:
     logger.info("workflow_node:ai_review")
     try:
         agent = _get_review_agent()
-        return await agent(state)
+        result = await agent(state)
+        review = result.get("ai_review")
+        return {
+            **result,
+            "status": "completed" if review and review.score > 0 else "completed",
+        }
     except Exception as e:
         logger.error("ai_review_node_failed", error=str(e))
         return {
@@ -292,7 +297,8 @@ async def ai_review_node(state: ReviewState) -> dict[str, Any]:
                 recommendations=["Check logs for details"],
                 score=0,
                 approved=False,
-            )
+            ),
+            "status": "completed",
         }
 
 

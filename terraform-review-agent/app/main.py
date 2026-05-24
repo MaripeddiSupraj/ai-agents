@@ -117,10 +117,18 @@ async def github_webhook(request: Request):
             payload.get("repository", {})
             .get("full_name", "")
         )
-        changed_files = [
-            f.get("filename", "")
-            for f in payload.get("pull_request", {}).get("files", [])
-        ] if "pull_request" in payload else []
+
+        # PR webhook payloads don't include the files list — fetch via API
+        from github import Github
+        gh = Github(settings.github_token) if settings.github_token else None
+        changed_files: list[str] = []
+        if gh and repo_full_name and pr_number:
+            try:
+                repo = gh.get_repo(repo_full_name)
+                pr = repo.get_pull(pr_number)
+                changed_files = [f.filename for f in pr.get_files()]
+            except Exception as e:
+                logger.warning("github_webhook_fetch_files_failed", error=str(e))
 
         has_tf_files = any(f.endswith(".tf") for f in changed_files)
         if not has_tf_files:

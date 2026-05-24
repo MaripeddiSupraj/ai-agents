@@ -75,32 +75,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
           REDIS_URL: redis://localhost:6379/0
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           GCP_REGION: us-central1
         run: |
           python -c "
-import asyncio
+import asyncio, os, sys
 from app.models.state import make_initial_state
 from app.workflows.graph import create_review_graph
-from app.tools.github_tools import GitHubTool
 
 async def main():
-    pr_number = ${{ github.event.pull_request.number }}
-    repo = '${{ github.repository }}'
-    changed_files = ${{ toJSON(github.event.pull_request.changed_files) }}
-
     initial = make_initial_state()
-    initial['pr_number'] = pr_number
-    initial['repository'] = repo
-    initial['changed_files'] = changed_files if isinstance(changed_files, list) else []
-    initial['pr_title'] = '''${{ github.event.pull_request.title }}'''
-    initial['pr_body'] = '''${{ github.event.pull_request.body }}'''
+    initial['pr_number'] = int(os.environ.get('GITHUB_PR_NUMBER', '0'))
+    initial['repository'] = os.environ.get('GITHUB_REPOSITORY', '')
+    initial['commit_sha'] = os.environ.get('GITHUB_SHA', '')
+    initial['terraform_dir'] = os.environ.get('TERRAFORM_DIR', '')
 
     graph = create_review_graph()
     result = await graph.ainvoke(dict(initial))
-    print(f'Review complete. Status: {result.get(\"status\")}')
-    return result
+    status = result.get('status', '')
+    print(f'Review complete. Status: {status}')
+    ai_review = result.get('ai_review')
+    if ai_review:
+        print(f'Score: {ai_review.score}/100 — {\"Approved\" if ai_review.approved else \"Changes requested\"}')
+    sys.exit(0 if status != 'error' else 1)
 
 asyncio.run(main())
 "
