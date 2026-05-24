@@ -28,7 +28,7 @@ runs:
 
     - uses: open-policy-agent/setup-opa@v2
       with:
-        version: 1.0.0
+        version: latest
 
     - name: Install agent
       shell: bash
